@@ -32,7 +32,7 @@ const Feedback = mongoose.model('Feedback', feedbackSchema);
 // Send email feedback
 async function sendEmailFeedback(feedbackData) {
   try {
-    console.log('📧 Preparing to send email...');
+    console.log('📧 Sending email notification...');
     
     const mailOptions = {
       from: process.env.EMAIL_USER,
@@ -62,13 +62,11 @@ async function sendEmailFeedback(feedbackData) {
       `,
     };
 
-    console.log('📧 Sending email...');
     const result = await transporter.sendMail(mailOptions);
     console.log('✅ Email sent successfully! Message ID:', result.messageId);
     return true;
   } catch (emailErr) {
     console.error('❌ Email failed:', emailErr.message);
-    console.error('❌ Full error:', emailErr);
     return false;
   }
 }
