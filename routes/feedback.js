@@ -51,28 +51,39 @@ router.post('/', async (req, res) => {
     };
 
     let savedToMongo = false;
+    let errorMessage = '';
 
-    // Save to MongoDB with fallback
-    try {
-      console.log('🔍 Attempting to save feedback to MongoDB...');
-      console.log('📊 Database name:', mongoose.connection.name);
-      console.log('📊 Connection state:', mongoose.connection.readyState);
-      
-      const entry = new Feedback(feedbackData);
-      const savedEntry = await entry.save();
-      
-      console.log('✅ Feedback saved to MongoDB:', savedEntry._id);
-      console.log('✅ Campus:', savedEntry.campus);
-      console.log('✅ Database:', mongoose.connection.name);
-      savedToMongo = true;
-    } catch (mongoErr) {
-      console.error('❌ MongoDB save error:', mongoErr.message);
+    // FIXED: Check MongoDB connection state before attempting save
+    if (mongoose.connection.readyState !== 1) {
+      console.log('❌ MongoDB not connected (readyState:', mongoose.connection.readyState, ')');
       console.log('💾 Feedback saved to memory (MongoDB unavailable):', feedbackData.campus);
       memoryStorage.push(feedbackData);
-      console.log(`📊 Total feedback in memory: ${memoryStorage.length}`);
+      errorMessage = 'MongoDB not connected - using memory fallback';
+    } else {
+      // Save to MongoDB with fallback
+      try {
+        console.log('🔍 Attempting to save feedback to MongoDB...');
+        console.log('📊 Database name:', mongoose.connection.name);
+        console.log('📊 Connection state:', mongoose.connection.readyState);
+        
+        const entry = new Feedback(feedbackData);
+        const savedEntry = await entry.save();
+        
+        console.log('✅ Feedback saved to MongoDB:', savedEntry._id);
+        console.log('✅ Campus:', savedEntry.campus);
+        console.log('✅ Database:', mongoose.connection.name);
+        savedToMongo = true;
+      } catch (mongoErr) {
+        console.error('❌ MongoDB save error:', mongoErr.message);
+        console.error('❌ Full error:', mongoErr);
+        console.log('💾 Feedback saved to memory (MongoDB unavailable):', feedbackData.campus);
+        memoryStorage.push(feedbackData);
+        console.log(`📊 Total feedback in memory: ${memoryStorage.length}`);
+        errorMessage = mongoErr.message;
+      }
     }
 
-    // Return success response
+    // Return success response with detailed status
     res.status(201).json({ 
       success: true,
       message: 'Feedback submitted successfully',
@@ -80,7 +91,9 @@ router.post('/', async (req, res) => {
         campus: feedbackData.campus,
         mood: feedbackData.mood,
         savedToMongo,
-        timestamp: feedbackData.submittedAt
+        timestamp: feedbackData.submittedAt,
+        storageLocation: savedToMongo ? 'mongodb' : 'memory',
+        error: errorMessage || null
       }
     });
 

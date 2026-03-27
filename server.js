@@ -10,7 +10,11 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: ['https://campass-nav.vercel.app', 'http://localhost:3000'],
+  origin: [
+    'https://campass-nav.vercel.app', 
+    'http://localhost:3000',
+    'http://localhost:5173'  
+  ],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
 }));
@@ -23,10 +27,12 @@ app.use('/api/chat', chatRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  const mongoDb = mongoose.connection.readyState === 1 ? mongoose.connection.name : 'not connected';
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    mongodb: mongoStatus
+    mongodb: mongoStatus,
+    database: mongoDb
   });
 });
 
@@ -34,7 +40,6 @@ app.get('/api/health', (req, res) => {
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      dbName: 'campusnav',
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
