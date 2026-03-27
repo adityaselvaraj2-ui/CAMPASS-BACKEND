@@ -54,13 +54,21 @@ router.post('/', async (req, res) => {
 
     // Save to MongoDB with fallback
     try {
+      console.log('🔍 Attempting to save feedback to MongoDB...');
+      console.log('📊 Database name:', mongoose.connection.name);
+      console.log('📊 Connection state:', mongoose.connection.readyState);
+      
       const entry = new Feedback(feedbackData);
-      await entry.save();
-      console.log('✅ Feedback saved to MongoDB:', feedbackData.campus);
+      const savedEntry = await entry.save();
+      
+      console.log('✅ Feedback saved to MongoDB:', savedEntry._id);
+      console.log('✅ Campus:', savedEntry.campus);
+      console.log('✅ Database:', mongoose.connection.name);
       savedToMongo = true;
     } catch (mongoErr) {
-      memoryStorage.push(feedbackData);
+      console.error('❌ MongoDB save error:', mongoErr.message);
       console.log('💾 Feedback saved to memory (MongoDB unavailable):', feedbackData.campus);
+      memoryStorage.push(feedbackData);
       console.log(`📊 Total feedback in memory: ${memoryStorage.length}`);
     }
 

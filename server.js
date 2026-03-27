@@ -34,6 +34,7 @@ app.get('/api/health', (req, res) => {
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      dbName: 'campusnav',
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
