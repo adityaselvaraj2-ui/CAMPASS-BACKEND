@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
       building: building?.trim() || '',
       mood: Number(mood),
       comment: comment?.trim() || '',
-      submittedAt: new Date()
+      submitted_at: new Date()
     };
 
     let savedToSupabase = false;
@@ -73,7 +73,7 @@ router.post('/', async (req, res) => {
         campus: feedbackData.campus,
         mood: feedbackData.mood,
         savedToSupabase,
-        timestamp: feedbackData.submittedAt,
+        timestamp: feedbackData.submitted_at,
         storageLocation: savedToSupabase ? 'supabase' : 'memory',
         error: errorMessage || null
       }
