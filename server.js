@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
+const supabase = require('./config/supabase');
 
 const feedbackRoutes = require('./routes/feedback');
 const chatRoutes = require('./routes/chat');
@@ -25,48 +25,57 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/chat', chatRoutes);
 
 // Health check
-app.get('/api/health', (req, res) => {
-  const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  const mongoDb = mongoose.connection.readyState === 1 ? mongoose.connection.name : 'not connected';
+app.get('/api/health', async (req, res) => {
+  let supabaseStatus = 'disconnected';
+  let database = 'not connected';
+  
+  try {
+    const { data, error } = await supabase.from('feedback').select('count').limit(1);
+    if (!error) {
+      supabaseStatus = 'connected';
+      database = 'supabase';
+    }
+  } catch (err) {
+    console.log('Supabase health check failed:', err.message);
+  }
+  
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    mongodb: mongoStatus,
-    database: mongoDb
+    database: supabaseStatus,
+    db_type: database
   });
 });
 
-// Enhanced MongoDB connection
-const connectDB = async () => {
+// Supabase connection check
+const checkSupabaseConnection = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-    
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
-    console.log(`📊 Database: ${conn.connection.name}`);
-    
-    return true;
+    const { data, error } = await supabase.from('feedback').select('count').limit(1);
+    if (!error) {
+      console.log('✅ Supabase Connected successfully');
+      return true;
+    } else {
+      console.error('❌ Supabase connection failed:', error.message);
+      return false;
+    }
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
-    console.log('🔄 Server will continue without MongoDB. Feedback will be stored in memory.');
+    console.error('❌ Supabase connection error:', error.message);
     return false;
   }
 };
 
-// Start server with MongoDB connection
+// Start server with Supabase connection
 const startServer = async () => {
   const PORT = process.env.PORT || 5000;
   
-  // Try to connect to MongoDB (but don't block server start)
-  const mongoConnected = await connectDB();
+  // Try to connect to Supabase (but don't block server start)
+  const supabaseConnected = await checkSupabaseConnection();
   
-  // Start server regardless of MongoDB connection
+  // Start server regardless of Supabase connection
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🤖 AI Chat: ${process.env.GROQ_API_KEY ? 'Configured' : 'Not configured'}`);
-    console.log(`💾 MongoDB: ${mongoConnected ? 'Connected' : 'Using memory fallback'}`);
+    console.log(`💾 Supabase: ${supabaseConnected ? 'Connected' : 'Using memory fallback'}`);
     console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
   });
 };
@@ -74,8 +83,7 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🔄 Shutting down gracefully...');
-  await mongoose.connection.close();
-  console.log('✅ MongoDB connection closed');
+  console.log('✅ Server shut down complete');
   process.exit(0);
 });
 

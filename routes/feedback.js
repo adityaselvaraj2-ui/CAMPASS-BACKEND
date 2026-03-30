@@ -1,23 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose');
+const supabase = require('../config/supabase');
 
 // In-memory storage as fallback
 let memoryStorage = [];
-
-// Mongoose schema — store exactly what the frontend form collects
-const feedbackSchema = new mongoose.Schema({
-  campus:     { type: String, required: true },        // e.g. "SJCE"
-  department: { type: String, default: '' },           // e.g. "CSE"
-  year:       { type: String, default: '' },           // e.g. "2nd Year"
-  anonymous:  { type: Boolean, default: false },
-  building:   { type: String, default: '' },           // building name
-  mood:       { type: Number, required: true },        // 0–5 float
-  comment:    { type: String, default: '' },
-  submittedAt:{ type: Date, default: Date.now },
-});
-
-const Feedback = mongoose.model('Feedback', feedbackSchema);
 
 // POST /api/feedback  — save a new feedback entry
 router.post('/', async (req, res) => {
@@ -50,37 +36,33 @@ router.post('/', async (req, res) => {
       submittedAt: new Date()
     };
 
-    let savedToMongo = false;
+    let savedToSupabase = false;
     let errorMessage = '';
 
-    // FIXED: Check MongoDB connection state before attempting save
-    if (mongoose.connection.readyState !== 1) {
-      console.log('❌ MongoDB not connected (readyState:', mongoose.connection.readyState, ')');
-      console.log('💾 Feedback saved to memory (MongoDB unavailable):', feedbackData.campus);
-      memoryStorage.push(feedbackData);
-      errorMessage = 'MongoDB not connected - using memory fallback';
-    } else {
-      // Save to MongoDB with fallback
-      try {
-        console.log('🔍 Attempting to save feedback to MongoDB...');
-        console.log('📊 Database name:', mongoose.connection.name);
-        console.log('📊 Connection state:', mongoose.connection.readyState);
-        
-        const entry = new Feedback(feedbackData);
-        const savedEntry = await entry.save();
-        
-        console.log('✅ Feedback saved to MongoDB:', savedEntry._id);
-        console.log('✅ Campus:', savedEntry.campus);
-        console.log('✅ Database:', mongoose.connection.name);
-        savedToMongo = true;
-      } catch (mongoErr) {
-        console.error('❌ MongoDB save error:', mongoErr.message);
-        console.error('❌ Full error:', mongoErr);
-        console.log('💾 Feedback saved to memory (MongoDB unavailable):', feedbackData.campus);
-        memoryStorage.push(feedbackData);
-        console.log(`📊 Total feedback in memory: ${memoryStorage.length}`);
-        errorMessage = mongoErr.message;
+    // Check Supabase connection and save
+    try {
+      console.log('🔍 Attempting to save feedback to Supabase...');
+      
+      const { data, error } = await supabase
+        .from('feedback')
+        .insert([feedbackData])
+        .select();
+      
+      if (error) {
+        console.error('❌ Supabase save error:', error.message);
+        throw error;
       }
+      
+      console.log('✅ Feedback saved to Supabase:', data[0].id);
+      console.log('✅ Campus:', data[0].campus);
+      savedToSupabase = true;
+      
+    } catch (supabaseErr) {
+      console.error('❌ Supabase save error:', supabaseErr.message);
+      console.log('💾 Feedback saved to memory (Supabase unavailable):', feedbackData.campus);
+      memoryStorage.push(feedbackData);
+      console.log(`📊 Total feedback in memory: ${memoryStorage.length}`);
+      errorMessage = supabaseErr.message;
     }
 
     // Return success response with detailed status
@@ -90,9 +72,9 @@ router.post('/', async (req, res) => {
       data: {
         campus: feedbackData.campus,
         mood: feedbackData.mood,
-        savedToMongo,
+        savedToSupabase,
         timestamp: feedbackData.submittedAt,
-        storageLocation: savedToMongo ? 'mongodb' : 'memory',
+        storageLocation: savedToSupabase ? 'supabase' : 'memory',
         error: errorMessage || null
       }
     });
@@ -111,12 +93,24 @@ router.get('/', async (req, res) => {
   try {
     const campus = req.query.campus;
     let feedback = [];
-    let source = 'mongodb';
+    let source = 'supabase';
 
     try {
-      const filter = campus ? { campus } : {};
-      feedback = await Feedback.find(filter).sort({ submittedAt: -1 }).limit(200);
-    } catch (mongoErr) {
+      let query = supabase.from('feedback').select('*').order('submitted_at', { ascending: false }).limit(200);
+      
+      if (campus) {
+        query = query.eq('campus', campus);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        throw error;
+      }
+      
+      feedback = data || [];
+    } catch (supabaseErr) {
+      console.error('❌ Supabase retrieval error:', supabaseErr.message);
       feedback = campus 
         ? memoryStorage.filter(f => f.campus === campus).sort((a, b) => b.submittedAt - a.submittedAt)
         : memoryStorage.sort((a, b) => b.submittedAt - a.submittedAt);
@@ -144,16 +138,46 @@ router.get('/', async (req, res) => {
 // GET /api/feedback/stats  — get feedback statistics
 router.get('/stats', async (req, res) => {
   try {
-    const stats = await Feedback.aggregate([
-      {
-        $group: {
-          _id: '$campus',
-          total: { $sum: 1 },
-          avgMood: { $avg: '$mood' },
-          latest: { $max: '$submittedAt' }
-        }
+    let stats = [];
+    
+    try {
+      const { data, error } = await supabase
+        .from('feedback')
+        .select('campus, mood, submitted_at');
+      
+      if (error) {
+        throw error;
       }
-    ]);
+      
+      // Group by campus and calculate stats
+      const campusGroups = {};
+      data.forEach(item => {
+        if (!campusGroups[item.campus]) {
+          campusGroups[item.campus] = {
+            total: 0,
+            moodSum: 0,
+            latest: item.submitted_at
+          };
+        }
+        campusGroups[item.campus].total++;
+        campusGroups[item.campus].moodSum += item.mood;
+        if (new Date(item.submitted_at) > new Date(campusGroups[item.campus].latest)) {
+          campusGroups[item.campus].latest = item.submitted_at;
+        }
+      });
+      
+      stats = Object.keys(campusGroups).map(campus => ({
+        _id: campus,
+        total: campusGroups[campus].total,
+        avgMood: campusGroups[campus].moodSum / campusGroups[campus].total,
+        latest: campusGroups[campus].latest
+      }));
+      
+    } catch (supabaseErr) {
+      console.error('❌ Supabase stats error:', supabaseErr.message);
+      // Return empty stats if Supabase fails
+      stats = [];
+    }
 
     res.json({
       success: true,
