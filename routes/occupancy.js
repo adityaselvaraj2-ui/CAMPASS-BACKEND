@@ -24,8 +24,11 @@ function cleanupExpiredSessions() {
 // Helper function to handle building entry/exit
 async function handleOccupancyUpdate(sessionId, buildingId, action, campus) {
   try {
+    console.log(`🎯 Occupancy Update: ${sessionId} -> ${buildingId} (${action}) in ${campus}`);
+    
     const session = activeSessions.get(sessionId);
     if (!session) {
+      console.log(`❌ Session not found: ${sessionId}`);
       return { error: 'Session not found' };
     }
 
@@ -81,40 +84,18 @@ async function handleOccupancyUpdate(sessionId, buildingId, action, campus) {
 async function enterBuilding(buildingId, sessionId, campus) {
   const now = new Date().toISOString();
   
-  // Insert session record
-  await supabase
-    .from('occupancy_sessions')
-    .insert({
-      session_id: sessionId,
-      building_id: buildingId,
-      campus_id: campus,
-      entry_time: now,
-      exit_time: null
-    });
-
-  // Update current occupancy
-  const { data: current } = await supabase
-    .from('occupancy_current')
-    .select('count')
-    .eq('building_id', buildingId)
-    .eq('campus_id', campus)
-    .single();
-
-  if (current) {
-    await supabase
-      .from('occupancy_current')
-      .update({ 
-        count: current.count + 1,
-        last_updated: now
-      })
-      .eq('building_id', buildingId)
-      .eq('campus_id', campus);
-  } else {
-    await supabase
-      .from('occupancy_current')
+  console.log(`🏢 Entering building: ${buildingId} for session ${sessionId}`);
+  
+  try {
+    // Insert session record
+    const { data: sessionData, error: sessionError } = await supabase
+      .from('occupancy_sessions')
       .insert({
+        session_id: sessionId,
         building_id: buildingId,
         campus_id: campus,
+        entry_time: now,
+        exit_time: null
         count: 1,
         last_updated: now
       });
