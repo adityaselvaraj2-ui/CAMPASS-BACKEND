@@ -5,6 +5,7 @@ const supabase = require('./config/supabase');
 
 const feedbackRoutes = require('./routes/feedback');
 const chatRoutes = require('./routes/chat');
+const occupancyRoutes = require('./routes/occupancy');
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use(express.json());
 // Routes
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/occupancy', occupancyRoutes);
 
 // Health check
 app.get('/api/health', async (req, res) => {
